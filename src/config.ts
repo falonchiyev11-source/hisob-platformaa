@@ -20,8 +20,20 @@ export const config = {
   webDist: process.env.WEB_DIST ? path.resolve(process.env.WEB_DIST) : path.join(ROOT_DIR, 'web', 'dist'),
   dataDir: process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT_DIR, 'data'),
   // Frontend boshqa manzilda joylashsa, uning manzili (masalan https://hisob.example.uz). Bir nechta bo'lsa vergul bilan.
-  corsOrigins: (process.env.CORS_ORIGIN ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+  // Mayda farqlar hisobga olinmaydi: oxiridagi "/", yo'l (/login), qo'shtirnoq, katta-kichik harf.
+  corsOrigins: (process.env.CORS_ORIGIN ?? '').split(/[,\s]+/).map(normalizeOrigin).filter(Boolean),
 };
+
+/** "https://Sayt.vercel.app/" yoki "'https://sayt.vercel.app/login'" → "https://sayt.vercel.app" */
+export function normalizeOrigin(value: string | undefined | null): string {
+  const s = (value ?? '').trim().replace(/^['"]+|['"]+$/g, '');
+  if (!s) return '';
+  try {
+    return new URL(s.includes('://') ? s : `https://${s}`).origin.toLowerCase();
+  } catch {
+    return s.replace(/\/+$/, '').toLowerCase();
+  }
+}
 
 export function assertConfig() {
   if (!config.jwtSecret || config.jwtSecret.length < 32) {

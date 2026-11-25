@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import fjwt from '@fastify/jwt';
 import fstatic from '@fastify/static';
 import fs from 'node:fs';
-import { config } from './config.ts';
+import { config, normalizeOrigin } from './config.ts';
 import { AppError } from './util.ts';
 import { authRoutes } from './routes/auth.ts';
 import { dataRoutes } from './routes/data.ts';
@@ -14,14 +14,19 @@ export async function buildApp(opts: { logger?: boolean; serveWeb?: boolean } = 
 
   // Frontend alohida domenda bo'lsa — faqat ruxsat berilgan manzillarga CORS
   if (config.corsOrigins.length) {
+    console.log(`CORS: ruxsat berilgan frontend manzillari: ${config.corsOrigins.join(', ')}`);
+    const warned = new Set<string>();
     app.addHook('onRequest', async (req, reply) => {
       const origin = req.headers.origin;
-      if (origin && config.corsOrigins.includes(origin)) {
+      if (origin && config.corsOrigins.includes(normalizeOrigin(origin))) {
         reply.header('Access-Control-Allow-Origin', origin);
         reply.header('Vary', 'Origin');
         reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
         reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
         reply.header('Access-Control-Max-Age', '86400');
+      } else if (origin && !warned.has(origin)) {
+        warned.add(origin);
+        console.warn(`CORS: "${origin}" manziliga ruxsat yo'q. Uni CORS_ORIGIN sozlamasiga qo'shing.`);
       }
       if (req.method === 'OPTIONS') return reply.code(204).send();
     });
