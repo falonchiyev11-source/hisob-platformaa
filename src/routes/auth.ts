@@ -11,6 +11,9 @@ const zUsername = z.string().transform((v) => v.trim().replace(/\s+/g, ' '))
   .refine((v) => v.length >= 2 && v.length <= 60, 'Nom 2–60 belgidan iborat bo‘lsin');
 const normName = (v: string) => v.trim().replace(/\s+/g, ' ');
 /** Qidiruv kaliti: kichik harflar (har qanday alifboda), apostrof turlari bir xil. "Ali Do‘koni" → "ali do'koni" */
+/** Akkauntni o'chirishni tasdiqlovchi so'z: "hayir" (katta-kichik harf farqsiz, kirillda "ҳайир" ham). */
+export const isDeleteConfirmWord = (v: string) => ['hayir', 'ҳайир', 'хайир'].includes(v.trim().toLowerCase());
+
 export const loginKey = (v: string) => normName(v).normalize('NFC').toLowerCase().replace(/[‘’ʻʼ`´]/g, "'");
 const zPassword = z.string().min(6, 'Parol kamida 6 belgi bo‘lsin').max(100);
 
@@ -67,6 +70,23 @@ export async function authRoutes(app: FastifyInstance) {
       await c.query('UPDATE users SET password_hash=$2 WHERE id=$1', [req.user2.id, await hashPassword(p.newPassword)]);
       await audit(c, req.user2.id, 'user.password', 'user', req.user2.id);
     });
+    return { ok: true };
+  });
+
+  // --- Akkauntni butunlay o'chirish (faqat administrator) ---
+  // Do'kon nomi, parol, barcha foydalanuvchilar, mahsulotlar, savdolar, xarajatlar, hisobotlar — hammasi o'chadi.
+  // Qayta tiklab bo'lmaydi; keyin platforma yana "do'kon nomi + parol" bilan ro'yxatdan o'tishni so'raydi.
+  app.post('/api/account/delete', { preHandler: requireAdmin }, async (req) => {
+    const p = parse(z.object({ confirm: z.string() }), req.body);
+    if (!isDeleteConfirmWord(p.confirm)) throw bad('Akkauntni o‘chirish uchun tasdiqlash maydoniga "hayir" deb yozing');
+    await tx(async (c) => {
+      await c.query('LOCK TABLE users IN ACCESS EXCLUSIVE MODE');
+      const tables = (await c.query(
+        "SELECT tablename FROM pg_tables WHERE schemaname = current_schema() AND tablename <> 'schema_migrations'",
+      )).rows.map((r) => `"${r.tablename}"`);
+      await c.query(`TRUNCATE ${tables.join(', ')} RESTART IDENTITY CASCADE`);
+    });
+    req.log.warn({ by: req.user2.username }, 'Akkaunt va barcha ma’lumotlar o‘chirildi');
     return { ok: true };
   });
 
